@@ -1,21 +1,5 @@
 const resemble = require('resemblejs');
 
-const src = 'img/ml.jpg';
-
-const compare = (img2) => (
-	new Promise((resolve, reject) => (
-		res
-			.compareTo(img2)
-			.ignoreColors()
-			.onComplete((data) => {
-				const similarity = (100 - data.misMatchPercentage) / 100;
-				resolve(similarity);
-			})
-	))
-);
-
-const res = resemble(src);
-const compareToSrc = (image) => compare(image);
 
 // const generateImage = (gene) => new Promise((resolve, reject) => {
 // 	const img = new Image()
@@ -24,13 +8,14 @@ const compareToSrc = (image) => compare(image);
 // 	img.src = gene;
 // });
 
-const convertImageToDataUri = (image) => new Promise((resolve, reject) => {
+const convertImageToDataUri = (image, scale) => new Promise((resolve, reject) => {
+	scale = scale || 1;
 	const canvas = document.createElement('canvas');
-	canvas.width = image.naturalWidth;
-	canvas.height = image.naturalHeight;
+	canvas.width = image.naturalWidth * scale;
+	canvas.height = image.naturalHeight * scale;
 
-	canvas.getContext('2d').drawImage(image, 0, 0);
-	resolve(canvas.toDataURL('image/png'));
+	canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+	resolve(canvas.toDataURL());
 });
 
 const drawShape = (shape, scale, ctx) => {
@@ -43,19 +28,19 @@ const drawShape = (shape, scale, ctx) => {
 const generateImage = (gene, scale) => new Promise((resolve, reject) => {
 	scale = scale || 1;
 	const canvas = document.createElement('canvas');
-	canvas.width = 300 * scale;
-	canvas.height = 447 * scale;
+	canvas.width = width * scale;
+	canvas.height = height * scale;
 
 	const ctx = canvas.getContext('2d');
 
-	ctx.fillStyle = 'rgb(128,128,128)';
+	ctx.fillStyle = 'rgb(255,255,255)';
 	ctx.fillRect(0,0, canvas.width, canvas.height);
 
 	gene.shapes.forEach((shape) => {
 		drawShape(shape, scale, ctx);
 	});
 
-	resolve(canvas.toDataURL('image/png'));
+	resolve(canvas.toDataURL());
 });
 
 const runGeneration = (genes) => Promise.all(
@@ -95,18 +80,19 @@ const procreate = (gene) => {
 	const genes = [gene];
 
 	// if (gene.shapes.length < 10) {
-	for (var j = 0; j < 1; j++) {
+	for (var j = 0; j < 4; j++) {
 		let grownShapes = gene.shapes.slice(0);
 		var maxAdd = Math.random() * 1;
 		for (var added = 0; added < maxAdd; added++) {
-			const grey = Math.floor(Math.random() * 255);
-			const r = grey; //Math.floor(Math.random() * 255);
-			const g = grey; //Math.floor(Math.random() * 255);
-			const b = grey; //Math.floor(Math.random() * 255);
+			const FORCE_GRAYSCALE = true;
+			let grey = Math.floor(Math.random() * 255);
+			const r = FORCE_GRAYSCALE ? grey : Math.floor(Math.random() * 255);
+			const g = FORCE_GRAYSCALE ? grey : Math.floor(Math.random() * 255);
+			const b = FORCE_GRAYSCALE ? grey : Math.floor(Math.random() * 255);
 			grownShapes.push({
-				x: Math.random() * 300,
-				y: Math.random() * 447,
-				size: (0.03 + 0.9 * Math.pow(Math.random(), 4)) * Math.min(447, 300) / 2,
+				x: Math.random() * width,
+				y: Math.random() * height,
+				size: (0.03 + 0.9 * Math.pow(Math.random(), 4)) * Math.min(height, width) / 2,
 				color: `rgba(${r}, ${g}, ${b}, ${Math.random()})`
 			});
 		}
@@ -142,7 +128,7 @@ const procreate = (gene) => {
 const drawPreview = (best) => {
 	if (best.similarity > previousBest.similarity) {
 		previousBest.similarity = best.similarity;
-		generateImage(best.gene, 5).then((src) => previewElement.src = src);
+		generateImage(best.gene, 20).then((src) => previewElement.src = src);
 		console.log(best.similarity);
 	}
 	return best;
@@ -165,7 +151,48 @@ const iterate = (genes) => runGeneration(genes)
 ;
 
 
+let src = 'img/foto.JPG';
+
+const compare = (img1, img2) => (
+	new Promise((resolve, reject) => (
+		resemble(img1)
+			.compareTo(img2)
+			.ignoreColors()
+			.onComplete((data) => {
+				const similarity = (100 - data.misMatchPercentage) / 100;
+				resolve(similarity);
+			})
+	))
+);
+
+
+const compareData = (data1, data2) => {
+	let errors = 0;
+	const threshold = 50;
+	for (var i = 0; i < data1.length; i+= 4) {
+		const d = Math.abs(data1[i] - data[i]);
+		if (d > threshold) {
+			errors += 1;
+		}
+	}
+	return errors / (data1.length * 4);
+}
+
+const compareToSrc = (image) => compare(src, image);
+let width, height;
+
+const srcImg = new Image();
+srcImg.addEventListener('load', () => {
+	console.log('loaded');
+	const scale = 0.05;
+	width = srcImg.naturalWidth * scale;
+	height = srcImg.naturalHeight * scale;
+	convertImageToDataUri(srcImg, scale).then((srcData) => {
+		src = srcData;
+		iterate([previousBest.gene]);
+	})
+});
+srcImg.src = src;
 
 let previewElement = new Image();
 document.body.appendChild(previewElement);
-iterate([previousBest.gene]);
