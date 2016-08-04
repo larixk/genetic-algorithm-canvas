@@ -1,8 +1,15 @@
 const CALCULATION_WIDTH = 100;
 let DRAW_WIDTH = 200;
-const MAX_SHAPES = 50;
-const GENERATION_SIZE = 190;
-const SURVIVORS = 5;
+const MAX_SHAPES = 32;
+const USE_TEST_IMG = true;
+
+let waitForPause;
+
+let geneticOptions = {
+  generationSize: 30,
+  survivors: 10,
+};
+
 
 const previewElement = new Image();
 document.body.appendChild(previewElement);
@@ -88,6 +95,10 @@ const runGeneration = (genes, srcData) => Promise.all(
 );
 
 const waitForFrame = (value) => new Promise((resolve) => {
+  if (waitForPause) {
+    waitForPause();
+    return new Error();
+  }
   requestAnimationFrame(() => resolve(value));
 });
 
@@ -100,13 +111,13 @@ const vary = (spread = 1, original = 0) => original + rand(-spread, spread);
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 const mutateShape = (shape) => Object.assign({}, {
-  size: clamp(shape.size * vary(0.01, 1), 0, Math.max(height, width)),
+  size: clamp(shape.size * vary(0.01, 1), 2, Math.max(height, width)),
   x: vary(0.5, shape.x),
   y: vary(0.5, shape.y),
   r: clamp(vary(1, shape.r), 0, 255),
   g: clamp(vary(1, shape.g), 0, 255),
   b: clamp(vary(1, shape.b), 0, 255),
-  a: clamp(vary(0.01, shape.a), 0.5, 1),
+  a: clamp(vary(0.01, shape.a), 0.8, 1),
 });
 
 const sortBySize = (a, b) => (a.size > b.size ? -1 : 1);
@@ -120,11 +131,11 @@ const mutate = (gene) => {
     grownShapes.push({
       x: rand(width),
       y: rand(height),
-      size: (Math.pow(rand(), 2) * Math.max(height, width)),
+      size: clamp((Math.pow(rand(), 2) * Math.max(height, width)), 2, Math.max(height, width)),
       r: Math.floor(rand(256)),
       g: Math.floor(rand(256)),
       b: Math.floor(rand(256)),
-      a: rand(),
+      a: rand(0.8, 1),
     });
   }
   grownShapes.sort(sortBySize);
@@ -139,30 +150,21 @@ const procreate = (results) => {
   const genes = [];
   results
     .sort(sortByError)
-    .slice(0, SURVIVORS)
+    .slice(0, geneticOptions.survivors)
     .forEach((result) => {
       genes.push(result.gene);
-      for (let j = 0; j < (GENERATION_SIZE / SURVIVORS) - 1; j++) {
+      for (let j = 0; j < (geneticOptions.generationSize / geneticOptions.survivors) - 1; j++) {
         genes.push(mutate(result.gene));
       }
     });
-
   return genes;
 };
 
-let lowestErrorEver = Number.POSITIVE_INFINITY;
+let bestOfRun;
 const drawPreview = (best) => {
-  if (best.error > lowestErrorEver) {
-    console.log('worse');
-  }
-  if (best.error === lowestErrorEver) {
-    console.log('same');
-  }
-  if (best.error < lowestErrorEver) {
-    console.log('better');
-    lowestErrorEver = best.error;
+  if (!bestOfRun || best.error < bestOfRun.error) {
     scoreElement.innerHTML = 1 - Math.sqrt(best.error);
-    window.best = best;
+    bestOfRun = best;
     generateImage(best.gene, DRAW_WIDTH / CALCULATION_WIDTH)
       .then((src) => {
         previewElement.src = src;
@@ -182,9 +184,11 @@ const iterate = (genes, srcData) => runGeneration(genes, srcData)
   .then(procreate)
   .then(waitForFrame)
   .then((newGenes) => iterate(newGenes, srcData))
-;
+  .catch(() => {
+    console.log('finished');
+  });
 
-const srcImgLoaded = (srcImg) => {
+const startIteratingWithImage = (srcImg) => {
   width = CALCULATION_WIDTH;
   height = (CALCULATION_WIDTH / srcImg.naturalWidth) * srcImg.naturalHeight;
   convertImageToData(srcImg, CALCULATION_WIDTH / srcImg.naturalWidth).then((srcData) => {
@@ -192,21 +196,77 @@ const srcImgLoaded = (srcImg) => {
   });
 };
 
-const init = () => {
+const srcToImage = (src) => new Promise((resolve) => {
+  const srcImg = new Image();
+  srcImg.src = src;
+  srcImg.addEventListener('load', () => resolve(srcImg));
+});
+
+const fileToDataUrl = (file) => new Promise((resolve) => {
+  const reader = new FileReader();
+  reader.onload = () => {
+    resolve(reader.result);
+  };
+  reader.readAsDataURL(file);
+});
+
+const askForFile = () => new Promise((resolve) => {
   const filePicker = document.createElement('input');
   filePicker.type = 'file';
   document.body.appendChild(filePicker);
   filePicker.addEventListener('change', () => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const srcImg = new Image();
-      srcImg.src = reader.result;
-      srcImg.addEventListener('load', () => srcImgLoaded(srcImg));
-    };
     document.body.removeChild(filePicker);
-    reader.readAsDataURL(filePicker.files[0]);
+    resolve(filePicker.files[0]);
   });
-  filePicker.click();
+});
+
+const init = () => {
+  let waitForImage;
+  bestOfRun = null;
+  if (USE_TEST_IMG) {
+    waitForImage = srcToImage('test.jpg');
+  } else {
+    waitForImage = askForFile()
+      .then(fileToDataUrl)
+      .then(srcToImage);
+  }
+  waitForImage.then(startIteratingWithImage);
 };
 
 init();
+
+const startEvaluator = () => {
+  let bestOptions;
+  let bestError;
+
+  const end = () => {
+    waitForPause = () => {
+      console.log('done');
+      console.log(bestOfRun.error);
+      if (!bestError || bestOfRun.error < bestError) {
+        bestError = bestOfRun.error;
+        bestOptions = geneticOptions;
+        console.log(bestOptions);
+      }
+      waitForPause = null;
+      start();
+    };
+  };
+
+  let attempt = 0;
+  const start = () => {
+    geneticOptions = Object.assign({}, geneticOptions);
+    if (attempt % 2) {
+      geneticOptions.generationSize += 5;
+    } else {
+      geneticOptions.survivors += 1;
+    }
+    init();
+
+    attempt++;
+    setTimeout(end, 15000);
+  };
+
+  start();
+};
+// startEvaluator();
