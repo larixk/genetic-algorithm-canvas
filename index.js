@@ -1,14 +1,17 @@
 const CALCULATION_WIDTH = 100;
 let DRAW_WIDTH = 200;
 const MAX_SHAPES = 50;
-const GENERATION_SIZE = 100;
-const SURVIVORS = 20;
+const GENERATION_SIZE = 190;
+const SURVIVORS = 5;
 
 const previewElement = new Image();
 document.body.appendChild(previewElement);
 
 const scoreElement = document.createElement('p');
 document.body.appendChild(scoreElement);
+
+const averageElement = document.createElement('p');
+document.body.appendChild(averageElement);
 
 document.addEventListener('keydown', (event) => {
   if (event.key === '=') {
@@ -52,29 +55,27 @@ const generateCanvas = (gene, scale) => new Promise((resolve) => {
 });
 
 const canvasToDataUri = (canvas) => canvas.toDataURL();
+
 const canvasToImageData = (canvas) => canvas
   .getContext('2d')
   .getImageData(0, 0, canvas.width, canvas.height)
-  .data
-;
+  .data;
 
 const convertImageToData = (image, scale) => convertImageToCanvas(image, scale)
-  .then(canvasToImageData)
-;
+  .then(canvasToImageData);
 
 const generateImage = (gene, scale) => generateCanvas(gene, scale)
-  .then(canvasToDataUri)
-;
+  .then(canvasToDataUri);
+
 const generateImageData = (gene, scale) => generateCanvas(gene, scale)
-  .then(canvasToImageData)
-;
+  .then(canvasToImageData);
 
 const compare = (srcData, resultData) => {
-  let error = 0;
-  for (let i = 0; i < srcData.length; i++) {
+  let error = 0, len = srcData.length;
+  for (let i = 0; i < len; i++) {
     error += Math.pow((srcData[i] - resultData[i]) / 256, 2);
   }
-  return error / srcData.length;
+  return error / len;
 };
 
 const runGeneration = (genes, srcData) => Promise.all(
@@ -94,64 +95,71 @@ const findBest = (options) => new Promise((resolve) => resolve(options.reduce((b
   (option.error < best.error) ? option : best
 ))));
 
+const rand = (from = 1, to = 0) => from + (Math.random() * (to - from));
+const vary = (spread = 1, original = 0) => original + rand(-spread, spread);
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+const mutateShape = (shape) => Object.assign({}, {
+  size: clamp(shape.size * vary(0.01, 1), 0, Math.max(height, width)),
+  x: vary(0.5, shape.x),
+  y: vary(0.5, shape.y),
+  r: clamp(vary(1, shape.r), 0, 255),
+  g: clamp(vary(1, shape.g), 0, 255),
+  b: clamp(vary(1, shape.b), 0, 255),
+  a: clamp(vary(0.01, shape.a), 0.5, 1),
+});
+
+const sortBySize = (a, b) => (a.size > b.size ? -1 : 1);
+
 const mutate = (gene) => {
-  let grownShapes = gene.shapes.map((shape) => Object.assign({}, shape, {
-      size: Math.max(1, shape.size * (1 + (0.01 * (Math.random() - 0.5)))),
-      x: shape.x + (0.1 * (Math.random() - 0.5)),
-      y: shape.y + (0.1 * (Math.random() - 0.5)),
-      r: Math.min(255, Math.max(0, shape.r + (1 * (Math.random() - 0.5)))),
-      g: Math.min(255, Math.max(0, shape.g + (1 * (Math.random() - 0.5)))),
-      b: Math.min(255, Math.max(0, shape.b + (1 * (Math.random() - 0.5)))),
-      a: Math.min(1, Math.max(0, shape.a + (0.1 * (Math.random() - 0.5)))),
-    })
-  );
-  if (grownShapes.length >= MAX_SHAPES) {
-    grownShapes.splice(Math.floor(Math.random() * grownShapes.length), 1);
+  const grownShapes = gene.shapes.map(mutateShape);
+  if (rand() < 0.2 && grownShapes.length >= MAX_SHAPES) {
+    grownShapes.splice(Math.floor(rand(grownShapes.length)), 1);
   }
-  const r = Math.floor(Math.random() * 256);
-  const g = Math.floor(Math.random() * 256);
-  const b = Math.floor(Math.random() * 256);
-  const a = Math.random();
-  grownShapes.push({
-    x: Math.random() * width,
-    y: Math.random() * height,
-    size: (Math.pow(Math.random(), 2) * Math.max(height, width)),
-    r,
-    g,
-    b,
-    a,
-  });
-  grownShapes.sort((a, b) => {
-    if (a.size > b.size) {
-      return -1;
-    }
-    return 1;
-  });
+  while (grownShapes.length < MAX_SHAPES) {
+    grownShapes.push({
+      x: rand(width),
+      y: rand(height),
+      size: (Math.pow(rand(), 2) * Math.max(height, width)),
+      r: Math.floor(rand(256)),
+      g: Math.floor(rand(256)),
+      b: Math.floor(rand(256)),
+      a: rand(),
+    });
+  }
+  grownShapes.sort(sortBySize);
   return Object.assign({}, gene, {
     shapes: grownShapes,
   });
 };
 
+const sortByError = (a, b) => (a.error > b.error ? 1 : -1);
+
 const procreate = (results) => {
   const genes = [];
-  results.sort((a, b) => {
-    if (a.error > b.error) {
-      return 1;
-    }
-    return -1;
-  }).slice(0, SURVIVORS).forEach((result) => {
-    genes.push(result.gene);
-    for (let j = 0; j < (GENERATION_SIZE / SURVIVORS) - 1; j++) {
-      genes.push(mutate(result.gene));
-    }
-  });
+  results
+    .sort(sortByError)
+    .slice(0, SURVIVORS)
+    .forEach((result) => {
+      genes.push(result.gene);
+      for (let j = 0; j < (GENERATION_SIZE / SURVIVORS) - 1; j++) {
+        genes.push(mutate(result.gene));
+      }
+    });
 
   return genes;
 };
 
 let lowestErrorEver = Number.POSITIVE_INFINITY;
 const drawPreview = (best) => {
+  if (best.error > lowestErrorEver) {
+    console.log('worse');
+  }
+  if (best.error === lowestErrorEver) {
+    console.log('same');
+  }
   if (best.error < lowestErrorEver) {
+    console.log('better');
     lowestErrorEver = best.error;
     scoreElement.innerHTML = 1 - Math.sqrt(best.error);
     window.best = best;
@@ -165,6 +173,8 @@ const drawPreview = (best) => {
 
 const iterate = (genes, srcData) => runGeneration(genes, srcData)
   .then((results) => new Promise((resolve) => {
+    const avg = 1 - Math.sqrt(results.reduce((total, b) => total + b.error, 0) / results.length);
+    averageElement.innerHTML = avg;
     findBest(results)
       .then(drawPreview)
       .then(() => resolve(results));

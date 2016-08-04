@@ -7,14 +7,18 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "webpack-dev-server"
   },
+  "eslintConfig": {
+      "env": {
+          "browser": true,
+          "node": true
+      },
+      "plugins": ["babel"],
+      "extends": "airbnb"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "get-pixels": "^3.3.0",
-    "image-diff": "^1.6.2",
-    "resemblejs": "^2.2.1",
-    "stats.js": "^0.16.0"
   },
   "devDependencies": {
     "eslint": "^3.2.2",
