@@ -1,13 +1,15 @@
-const CALCULATION_WIDTH = 100;
+const CALCULATION_WIDTH = 200;
 let DRAW_WIDTH = 200;
-const MAX_SHAPES = 32;
-const USE_TEST_IMG = true;
+const MAX_SHAPES = 50;
+const USE_TEST_IMG = false;
+
+const MIN_ALPHA = 0.4;
 
 let waitForPause;
 
 let geneticOptions = {
-  generationSize: 30,
-  survivors: 10,
+  generationSize: 80,
+  survivors: 2,
 };
 
 
@@ -78,7 +80,8 @@ const generateImageData = (gene, scale) => generateCanvas(gene, scale)
   .then(canvasToImageData);
 
 const compare = (srcData, resultData) => {
-  let error = 0, len = srcData.length;
+  let error = 0;
+  const len = srcData.length;
   for (let i = 0; i < len; i++) {
     error += Math.pow((srcData[i] - resultData[i]) / 256, 2);
   }
@@ -111,36 +114,41 @@ const vary = (spread = 1, original = 0) => original + rand(-spread, spread);
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 const mutateShape = (shape) => Object.assign({}, {
-  size: clamp(shape.size * vary(0.01, 1), 2, Math.max(height, width)),
+  size: clamp(shape.size * vary(0.1, 1), 2, Math.max(height, width)),
   x: vary(0.5, shape.x),
   y: vary(0.5, shape.y),
-  r: clamp(vary(1, shape.r), 0, 255),
-  g: clamp(vary(1, shape.g), 0, 255),
-  b: clamp(vary(1, shape.b), 0, 255),
-  a: clamp(vary(0.01, shape.a), 0.8, 1),
+  r: clamp(vary(2, shape.r), 0, 255),
+  g: clamp(vary(2, shape.g), 0, 255),
+  b: clamp(vary(2, shape.b), 0, 255),
+  a: clamp(vary(0.01, shape.a), MIN_ALPHA, 1),
 });
 
 const sortBySize = (a, b) => (a.size > b.size ? -1 : 1);
 
 const mutate = (gene) => {
-  const grownShapes = gene.shapes.map(mutateShape);
-  if (rand() < 0.2 && grownShapes.length >= MAX_SHAPES) {
-    grownShapes.splice(Math.floor(rand(grownShapes.length)), 1);
+  let shapes = gene.shapes.slice(0);
+  if (rand() < 0.2 && shapes.length >= MAX_SHAPES) {
+    shapes.splice(Math.floor(rand(shapes.length)), 1);
+    gene.type = 'replace';
+  } else if (shapes.length) {
+    const mutateIndex = Math.floor(rand(shapes.length));
+    shapes[mutateIndex] = mutateShape(shapes[mutateIndex]);
+    gene.type = 'mutate';
   }
-  while (grownShapes.length < MAX_SHAPES) {
-    grownShapes.push({
+  while (shapes.length < MAX_SHAPES) {
+    shapes.push({
       x: rand(width),
       y: rand(height),
       size: clamp((Math.pow(rand(), 2) * Math.max(height, width)), 2, Math.max(height, width)),
       r: Math.floor(rand(256)),
       g: Math.floor(rand(256)),
       b: Math.floor(rand(256)),
-      a: rand(0.8, 1),
+      a: rand(MIN_ALPHA, 1),
     });
   }
-  grownShapes.sort(sortBySize);
+  shapes.sort(sortBySize);
   return Object.assign({}, gene, {
-    shapes: grownShapes,
+    shapes,
   });
 };
 
@@ -164,6 +172,7 @@ let bestOfRun;
 const drawPreview = (best) => {
   if (!bestOfRun || best.error < bestOfRun.error) {
     scoreElement.innerHTML = 1 - Math.sqrt(best.error);
+    console.log(best.gene.type);
     bestOfRun = best;
     generateImage(best.gene, DRAW_WIDTH / CALCULATION_WIDTH)
       .then((src) => {
@@ -184,7 +193,8 @@ const iterate = (genes, srcData) => runGeneration(genes, srcData)
   .then(procreate)
   .then(waitForFrame)
   .then((newGenes) => iterate(newGenes, srcData))
-  .catch(() => {
+  .catch((e) => {
+    console.error(e);
     console.log('finished');
   });
 
