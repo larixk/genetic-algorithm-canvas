@@ -5,20 +5,24 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "webpack-dev-server -d"
+    "start": "parcel index.html",
+    "build": "parcel build index.html"
   },
   "eslintConfig": {
-      "env": {
-          "browser": true,
-          "node": true
-      },
-      "plugins": ["babel"],
-      "extends": "airbnb"
+    "env": {
+      "browser": true,
+      "node": true
+    },
+    "plugins": [
+      "babel"
+    ],
+    "extends": "airbnb"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "parcel": "^2.0.1"
   },
   "devDependencies": {
     "eslint": "^3.2.2",
@@ -26,8 +30,6 @@
     "eslint-plugin-babel": "^3.3.0",
     "eslint-plugin-import": "^1.12.0",
     "eslint-plugin-jsx-a11y": "^2.0.1",
-    "eslint-plugin-react": "^6.0.0",
-    "webpack": "^1.13.1",
-    "webpack-dev-server": "^1.14.1"
+    "eslint-plugin-react": "^6.0.0"
   }
 }
