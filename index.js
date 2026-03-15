@@ -115,17 +115,29 @@ const compare = (srcData, resultData) => {
   return error;
 };
 
-const evaluateGenes = (genes, calculateError) =>
-  Promise.all(
-    genes.map((gene) =>
-      geneToImageData(gene, 1)
-        .then(calculateError)
-        .then((error) => ({
-          gene,
-          error,
-        }))
-    )
-  );
+const WORKER_COUNT = navigator.hardwareConcurrency || 4;
+const workers = Array.from({ length: WORKER_COUNT }, () =>
+  new Worker(new URL("./eval.worker.js", import.meta.url), { type: "module" })
+);
+
+const evaluateGenes = (genes) =>
+  new Promise((resolve) => {
+    const chunkSize = Math.ceil(genes.length / WORKER_COUNT);
+    let remaining = WORKER_COUNT;
+    const allResults = [];
+    workers.forEach((worker, i) => {
+      const chunk = genes.slice(i * chunkSize, (i + 1) * chunkSize);
+      if (!chunk.length) {
+        remaining--;
+        return;
+      }
+      worker.onmessage = ({ data }) => {
+        allResults.push(...data);
+        if (--remaining === 0) resolve(allResults);
+      };
+      worker.postMessage({ type: "evaluate", genes: chunk });
+    });
+  });
 
 const waitForFrame = (value) =>
   new Promise((resolve) => {
@@ -210,35 +222,50 @@ const procreate = (results) => {
 };
 
 let bestOfRun;
+let pendingBest = null;
+
 const drawPreview = (best) => {
   if (!bestOfRun || best.error < bestOfRun.error) {
-    scoreElement.innerHTML = best.error;
     bestOfRun = best;
+    pendingBest = best;
+  }
+  return best;
+};
+
+const uiLoop = () => {
+  if (pendingBest) {
+    const best = pendingBest;
+    pendingBest = null;
+    scoreElement.innerHTML = best.error;
     geneToDataURL(best.gene, DRAW_WIDTH / CALCULATION_WIDTH).then((src) => {
       previewElement.src = src;
     });
   }
-  return best;
+  requestAnimationFrame(uiLoop);
 };
+requestAnimationFrame(uiLoop);
 
 const drawPreviewOfBestResult = (results) =>
   findBest(results)
     .then(drawPreview)
     .then(() => Promise.resolve(results));
 
-const iterate = (genes, calculateError) =>
-  evaluateGenes(genes, calculateError)
+const iterate = (genes) =>
+  evaluateGenes(genes)
     .then(drawPreviewOfBestResult)
     .then(procreate)
-    .then(waitForFrame)
-    .then((newGenes) => iterate(newGenes, calculateError));
+    .then((newGenes) => new Promise((resolve) => setTimeout(() => resolve(newGenes), 0)))
+    .then((newGenes) => iterate(newGenes));
 
 const startIteratingWithImage = (srcImg) => {
   width = CALCULATION_WIDTH;
   height = (CALCULATION_WIDTH / srcImg.naturalWidth) * srcImg.naturalHeight;
   imageToDataURL(srcImg, CALCULATION_WIDTH / srcImg.naturalWidth).then(
     (srcData) => {
-      iterate([{ shapes: [] }], (imageData) => compare(srcData, imageData));
+      workers.forEach((w) =>
+        w.postMessage({ type: "init", srcData: new Uint8Array(srcData), width, height })
+      );
+      iterate([{ shapes: [] }]);
     }
   );
 };
