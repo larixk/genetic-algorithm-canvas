@@ -1,6 +1,6 @@
 import testImage from "./test.jpg";
 
-const CALCULATION_WIDTH = 200;
+const CALCULATION_WIDTH = 64;
 let DRAW_WIDTH = window.innerWidth - 80;
 const MAX_SHAPES = 32;
 const USE_TEST_IMG = false;
@@ -161,16 +161,13 @@ const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 const mutateShape = (shape) =>
   Object.assign({}, shape, {
-    size:
-      rand() > 0.9
-        ? shape.size
-        : clamp(shape.size * vary(0.1, 1), 4, Math.max(height, width) / 2),
-    x: rand() < 0.9 ? shape.x : clamp(vary(width / 10, shape.x), 0, width),
-    y: rand() < 0.9 ? shape.y : clamp(vary(height / 10, shape.y), 0, height),
-    r: rand() < 0.9 ? shape.r : clamp(vary(16, shape.r), 0, 255),
-    g: rand() < 0.9 ? shape.g : clamp(vary(16, shape.g), 0, 255),
-    b: rand() < 0.9 ? shape.b : clamp(vary(16, shape.b), 0, 255),
-    a: rand() < 0.9 ? shape.a : clamp(vary(0.05, shape.a), MIN_ALPHA, 1),
+    size: rand() < 0.5 ? shape.size : clamp(shape.size * vary(0.1, 1), 4, Math.max(height, width) / 2),
+    x: rand() < 0.5 ? shape.x : clamp(vary(width / 10, shape.x), 0, width),
+    y: rand() < 0.5 ? shape.y : clamp(vary(height / 10, shape.y), 0, height),
+    r: rand() < 0.5 ? shape.r : clamp(vary(16, shape.r), 0, 255),
+    g: rand() < 0.5 ? shape.g : clamp(vary(16, shape.g), 0, 255),
+    b: rand() < 0.5 ? shape.b : clamp(vary(16, shape.b), 0, 255),
+    a: rand() < 0.5 ? shape.a : clamp(vary(0.05, shape.a), MIN_ALPHA, 1),
   });
 
 const sortBySize = (a, b) => (a.a > b.a ? -1 : 1);
@@ -236,7 +233,9 @@ const uiLoop = () => {
   if (pendingBest) {
     const best = pendingBest;
     pendingBest = null;
-    scoreElement.innerHTML = best.error;
+    const maxError = width * height * 4 * (255 * 255);
+    const similarity = (1 - best.error / maxError) * 100;
+    scoreElement.innerHTML = similarity.toFixed(4) + "%";
     geneToDataURL(best.gene, DRAW_WIDTH / CALCULATION_WIDTH).then((src) => {
       previewElement.src = src;
     });
@@ -260,8 +259,10 @@ const iterate = (genes) =>
 const startIteratingWithImage = (srcImg) => {
   width = CALCULATION_WIDTH;
   height = (CALCULATION_WIDTH / srcImg.naturalWidth) * srcImg.naturalHeight;
-  imageToDataURL(srcImg, CALCULATION_WIDTH / srcImg.naturalWidth).then(
-    (srcData) => {
+  convertImageToCanvas(srcImg, CALCULATION_WIDTH / srcImg.naturalWidth).then(
+    (srcCanvas) => {
+      document.body.appendChild(srcCanvas);
+      const srcData = canvasToImageData(srcCanvas);
       workers.forEach((w) =>
         w.postMessage({ type: "init", srcData: new Uint8Array(srcData), width, height })
       );
